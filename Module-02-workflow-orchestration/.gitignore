@@ -1,0 +1,30 @@
+cat > .gitignore <<'EOF'
+# Data outputs
+*.parquet
+
+# Python
+__pycache__/
+*.py[codz]
+.venv/
+env/
+venv/
+ENV/
+.ipynb_checkpoints/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+.terraformrc
+terraform.rc
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+.terraform.tfstate.lock.info
+
+# Secrets / credentials
+keys/
+EOF
+
