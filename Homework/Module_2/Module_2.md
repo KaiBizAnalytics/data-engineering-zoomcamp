@@ -34,5 +34,6 @@ WHERE STARTS_WITH(filename, 'green_tripdata_2020');
 # Question 5
 SELECT COUNT(*) AS total_rows
 FROM `sanguine-mark-366002.zoomcamp.yellow_tripdata`
-WHERE STARTS_WITH(filename, 'yellow_tripdata_2020-03');
+WHERE STARTS_WITH(filename, 'yellow_tripdata_2021-03');
 
+1925152
