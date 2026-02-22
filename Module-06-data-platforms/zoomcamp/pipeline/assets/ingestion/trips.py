@@ -22,7 +22,7 @@ import json
 import pandas as pd
 from datetime import datetime, timezone
 
-BASE_URL = "https://nyc-tlc.s3.amazonaws.com/trip+data/{taxi_type}_tripdata_{year}-{month:02d}.parquet"
+BASE_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data/{taxi_type}_tripdata_{year}-{month:02d}.parquet"
 
 def _month_starts(start: pd.Timestamp, end: pd.Timestamp):
     """
