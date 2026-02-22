@@ -4,6 +4,8 @@ logs/*.log
 __pycache__/
 *.py[cod]
 logs/queries
-duckdb.db
-*.duckdb
+
+# DuckDB
 *.db
+*.duckdb
+**/duckdb.db
