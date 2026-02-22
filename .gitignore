@@ -9,3 +9,6 @@ logs/queries
 *.db
 *.duckdb
 **/duckdb.db
+
+# local docker volume artifacts
+Module-01-docker-terraform/pipeline/ny_taxi_postgres_data/
