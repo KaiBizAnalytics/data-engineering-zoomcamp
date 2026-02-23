@@ -19,7 +19,7 @@ columns:
     type: string
     primary_key: true
   - name: trip_count
-    type: int64
+    type: bigint
     checks:
       - name: non_negative
   - name: total_fare
