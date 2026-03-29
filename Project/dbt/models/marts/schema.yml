@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: mart_home_court_advantage
+    description: >
+      Home court advantage metrics aggregated by team and season.
+      Partitioned by season_year (INT64 range), clustered by team_abbr_home.
+      Used directly by the Streamlit dashboard.
+    columns:
+      - name: season_year
+        description: Season start year
+        tests:
+          - not_null
+      - name: team_abbr
+        description: 3-letter team abbreviation
+        tests:
+          - not_null
+      - name: team_name
+        description: Full team name
+        tests:
+          - not_null
+      - name: is_bubble_season
+        description: True for the 2019-20 COVID bubble season (no fans)
+        tests:
+          - not_null
+      - name: home_win_pct
+        description: Fraction of home games won (0.0 – 1.0)
+        tests:
+          - not_null
+      - name: away_win_pct
+        description: Fraction of away games won (0.0 – 1.0)
+        tests:
+          - not_null
+      - name: home_advantage_delta
+        description: home_win_pct minus away_win_pct; positive = home advantage exists
+        tests:
+          - not_null
+      - name: league_home_win_pct
+        description: League-wide home win percentage for that season
+        tests:
+          - not_null

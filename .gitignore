@@ -1,14 +1,73 @@
+# Config
 .bruin.yml
-logs/runs
-logs/*.log
+
+# Logs
+logs/
+*.log
+
+# Python
 __pycache__/
 *.py[cod]
-logs/queries
+.venv/
+venv/
 
-# DuckDB
+# Executables (install via package manager instead)
+duckdb.exe
+terraform.exe
+
+# DuckDB databases
 *.db
 *.duckdb
 **/duckdb.db
 
+# Parquet / large data files
+*.parquet
+*.csv.gz
+
+# Spark data outputs
+spark/data/
+spark/fhvhv/
+spark/yellow_2025_11_repartitioned/
+spark/zones/
+
+# dbt artifacts (generated, not source)
+taxi_rides_ny/data/
+taxi_rides_ny/target/
+taxi_rides_ny/dbt_packages/
+Project/dbt/dbt_packages/
+Project/dbt/target/
+Project/dbt/.user.yml
+Project/data/
+Project/terraform/.terraform/
+Project/terraform/terraform.tfstate
+Project/terraform/terraform.tfstate.backup
+.mcp.json
+taxi_rides_ny/logs/
+
+# Homework data
+Homework/Module_1/data/
+
+# Terraform (separate git repo with credentials — keep out entirely)
+terrademo/
+
+# Kaggle API credentials
+kaggle.json
+**/kaggle.json
+
+# Environment files with secrets
+.env
+
+# GCP SDK (install separately)
+google-cloud-sdk/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
 # local docker volume artifacts
 Module-01-docker-terraform/pipeline/ny_taxi_postgres_data/
+
+.claude/
+.claude-flow/
+CLAUDE.md
+

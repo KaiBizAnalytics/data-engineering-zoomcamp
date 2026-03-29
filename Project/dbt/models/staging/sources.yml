@@ -1,0 +1,42 @@
+version: 2
+
+sources:
+  - name: nba_raw
+    database: sanguine-mark-366002
+    schema: nba_raw
+    description: Raw NBA game data loaded from GCS via Kestra
+    tables:
+      - name: games
+        description: >
+          One row per NBA game. Loaded from the wyattowalsh/basketball Kaggle dataset.
+          Filtered to regular season (season_id prefix "2"), partitioned by game_date,
+          clustered by team_abbreviation_home and season_year.
+        columns:
+          - name: game_id
+            description: Unique game identifier
+          - name: game_date
+            description: Date the game was played
+          - name: season_id
+            description: Season identifier (e.g. "22019" = 2019-20 regular season)
+          - name: season_year
+            description: Season start year extracted from season_id
+          - name: team_abbreviation_home
+            description: 3-letter home team abbreviation
+          - name: team_name_home
+            description: Full home team name
+          - name: wl_home
+            description: Home team result — W (win) or L (loss)
+          - name: pts_home
+            description: Home team points scored
+          - name: team_abbreviation_away
+            description: 3-letter away team abbreviation
+          - name: team_name_away
+            description: Full away team name
+          - name: wl_away
+            description: Away team result
+          - name: pts_away
+            description: Away team points scored
+          - name: home_win
+            description: 1 if home team won, 0 if lost
+          - name: is_bubble_season
+            description: True for 2019-20 bubble season (no fans)

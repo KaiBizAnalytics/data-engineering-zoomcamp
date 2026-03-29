@@ -1,0 +1,15 @@
+# Run dbt with:  dbt run --profiles-dir .
+# Required env var: GOOGLE_APPLICATION_CREDENTIALS=/path/to/creds.json
+
+nba_project:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: sanguine-mark-366002
+      dataset: nba_dbt
+      location: US
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      threads: 4
+      timeout_seconds: 300

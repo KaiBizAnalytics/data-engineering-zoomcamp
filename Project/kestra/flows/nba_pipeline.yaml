@@ -1,0 +1,316 @@
+id: nba_home_court_pipeline
+namespace: nba
+description: |
+  End-to-end NBA Home Court Advantage pipeline.
+  1. Ingest game + attendance data from Kaggle → GCS (raw/)
+  2. Spark transform → GCS (processed/)
+  3. Load processed Parquet → BigQuery (nba_raw.games, partitioned + clustered)
+  4. dbt run → build staging view + mart table in BigQuery (nba_dbt_marts)
+
+variables:
+  gcs_bucket: sanguine-mark-366002-nba-lake
+  bq_project: sanguine-mark-366002
+  bq_raw_dataset: nba_raw
+  bq_dbt_dataset: nba_dbt_marts
+
+tasks:
+
+  # ── Step 1: Ingest from Kaggle → GCS ───────────────────────────────────────
+  - id: ingest
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kaggle pandas pyarrow google-cloud-storage tqdm click -q
+    env:
+      GCS_BUCKET: "{{ vars.gcs_bucket }}"
+      KAGGLE_USERNAME: "{{ kv('KAGGLE_USERNAME') }}"
+      KAGGLE_KEY: "{{ kv('KAGGLE_KEY') }}"
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: "{{ kv('GCP_SERVICE_ACCOUNT') }}"
+    script: |
+      import os, json
+      from pathlib import Path
+      import pandas as pd
+      from google.cloud import storage
+
+      creds_path = Path("/tmp/gcp-creds.json")
+      creds_path.write_text(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+      os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(creds_path)
+
+      kaggle_dir = Path.home() / ".kaggle"
+      kaggle_dir.mkdir(exist_ok=True)
+      (kaggle_dir / "kaggle.json").write_text(json.dumps({
+          "username": os.environ["KAGGLE_USERNAME"],
+          "key": os.environ["KAGGLE_KEY"]
+      }))
+      (kaggle_dir / "kaggle.json").chmod(0o600)
+
+      from kaggle.api.kaggle_api_extended import KaggleApi
+      api = KaggleApi()
+      api.authenticate()
+
+      dest = Path("/tmp/nba_raw")
+      dest.mkdir(exist_ok=True)
+      print("Downloading wyattowalsh/basketball ...")
+      api.dataset_download_files("wyattowalsh/basketball", path=str(dest), unzip=True)
+
+      client = storage.Client()
+      bucket = client.bucket(os.environ["GCS_BUCKET"])
+
+      for fname in ["game.csv", "game_info.csv"]:
+          csv_path = dest / "csv" / fname
+          df = pd.read_csv(csv_path, low_memory=False)
+          parquet_path = dest / fname.replace(".csv", ".parquet")
+          df.to_parquet(parquet_path, index=False)
+          blob_name = f"raw/{fname.replace('.csv', '.parquet')}"
+          bucket.blob(blob_name).upload_from_filename(str(parquet_path))
+          print(f"Uploaded {len(df):,} rows → gs://{os.environ['GCS_BUCKET']}/{blob_name}")
+
+  # ── Step 2: Spark transform → GCS processed/ ───────────────────────────────
+  - id: spark_transform
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - apt-get update -q && apt-get install -y -q default-jdk
+      - pip install pyspark==3.5.3 pandas pyarrow google-cloud-storage setuptools -q
+    env:
+      GCS_BUCKET: "{{ vars.gcs_bucket }}"
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: "{{ kv('GCP_SERVICE_ACCOUNT') }}"
+    script: |
+      import os
+      from pathlib import Path
+      from pyspark.sql import SparkSession
+      from pyspark.sql import functions as F
+      from google.cloud import storage
+
+      creds_path = Path("/tmp/gcp-creds.json")
+      creds_path.write_text(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+      os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(creds_path)
+
+      GCS_BUCKET = os.environ["GCS_BUCKET"]
+
+      spark = (
+          SparkSession.builder
+          .appName("NBA-Transform")
+          .master("local[*]")
+          .getOrCreate()
+      )
+      spark.sparkContext.setLogLevel("WARN")
+
+      client = storage.Client()
+      bucket = client.bucket(GCS_BUCKET)
+      for fname in ["game.parquet", "game_info.parquet"]:
+          bucket.blob(f"raw/{fname}").download_to_filename(f"/tmp/{fname}")
+
+      df_game = spark.read.parquet("/tmp/game.parquet")
+      df_info = spark.read.parquet("/tmp/game_info.parquet").select(
+          "game_id", F.col("attendance").cast("integer").alias("attendance")
+      )
+
+      df = df_game.select(
+          "game_id", F.to_date("game_date").alias("game_date"),
+          F.col("season_id").cast("string").alias("season_id"),
+          "team_id_home", "team_abbreviation_home", "team_name_home",
+          "wl_home", F.col("pts_home").cast("integer").alias("pts_home"),
+          "team_id_away", "team_abbreviation_away", "team_name_away",
+          "wl_away", F.col("pts_away").cast("integer").alias("pts_away"),
+      )
+      df = df.filter(F.col("season_id").startswith("2"))
+      df = df.withColumn("season_year", F.substring("season_id", -4, 4).cast("integer"))
+      df = df.withColumn("home_win", F.when(F.col("wl_home") == "W", 1).otherwise(0))
+      df = df.withColumn("is_bubble_season", F.when(F.col("season_year") == 2019, True).otherwise(False))
+      df = df.dropna(subset=["game_date", "wl_home", "team_abbreviation_home"])
+      df = df.join(df_info, on="game_id", how="left")
+
+      df.toPandas().to_parquet("/tmp/game_cleaned.parquet", index=False)
+      bucket.blob("processed/game_cleaned.parquet").upload_from_filename("/tmp/game_cleaned.parquet")
+      print(f"Uploaded {df.count():,} rows → gs://{GCS_BUCKET}/processed/game_cleaned.parquet")
+      spark.stop()
+
+  # ── Step 3: Load GCS → BigQuery ────────────────────────────────────────────
+  - id: load_to_bigquery
+    type: io.kestra.plugin.gcp.bigquery.LoadFromGcs
+    serviceAccount: "{{ kv('GCP_SERVICE_ACCOUNT') }}"
+    projectId: "{{ vars.bq_project }}"
+    destinationTable: "{{ vars.bq_project }}.{{ vars.bq_raw_dataset }}.games"
+    from:
+      - "gs://{{ vars.gcs_bucket }}/processed/game_cleaned.parquet"
+    format: PARQUET
+    writeDisposition: WRITE_TRUNCATE
+    autodetect: true
+    timePartitioningType: MONTH
+    timePartitioningField: game_date
+    clusteringFields:
+      - team_abbreviation_home
+      - season_year
+
+  # ── Step 4: dbt transformations ────────────────────────────────────────────
+  - id: dbt_run
+    type: io.kestra.plugin.dbt.cli.DbtCLI
+    containerImage: ghcr.io/dbt-labs/dbt-bigquery:1.8.latest
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    env:
+      GCP_CREDS: "{{ kv('GCP_SERVICE_ACCOUNT') }}"
+    beforeCommands:
+      - python3 -c "import os; open('/tmp/gcp-creds.json','w').write(os.environ['GCP_CREDS'])"
+    profiles: |
+      nba_project:
+        target: prod
+        outputs:
+          prod:
+            type: bigquery
+            method: service-account
+            project: "{{ vars.bq_project }}"
+            dataset: "{{ vars.bq_dbt_dataset }}"
+            location: US
+            keyfile: /tmp/gcp-creds.json
+            threads: 4
+            timeout_seconds: 300
+    commands:
+      - dbt deps
+      - dbt run
+      - dbt test
+    inputFiles:
+      dbt_project.yml: |
+        name: nba_project
+        version: "1.0.0"
+        config-version: 2
+        profile: nba_project
+        model-paths: ["models"]
+        seed-paths: ["seeds"]
+        test-paths: ["tests"]
+        macro-paths: ["macros"]
+        target-path: "target"
+        clean-targets: ["target", "dbt_packages"]
+        models:
+          nba_project:
+            +materialized: view
+      packages.yml: |
+        packages:
+          - package: dbt-labs/dbt_utils
+            version: [">=1.0.0", "<2.0.0"]
+      models/staging/sources.yml: |
+        version: 2
+        sources:
+          - name: nba_raw
+            database: sanguine-mark-366002
+            schema: nba_raw
+            tables:
+              - name: games
+      models/staging/stg_games.sql: |
+        {{ '{{' }} config(materialized='view') {{ '}}' }}
+        SELECT
+            game_id,
+            CAST(game_date AS DATE)                         AS game_date,
+            CAST(season_id AS STRING)                       AS season_id,
+            CAST(season_year AS INT64)                      AS season_year,
+            CAST(team_id_home AS STRING)                    AS team_id_home,
+            UPPER(TRIM(team_abbreviation_home))             AS team_abbr_home,
+            INITCAP(TRIM(team_name_home))                   AS team_name_home,
+            wl_home,
+            CAST(pts_home AS INT64)                         AS pts_home,
+            CAST(team_id_away AS STRING)                    AS team_id_away,
+            UPPER(TRIM(team_abbreviation_away))             AS team_abbr_away,
+            INITCAP(TRIM(team_name_away))                   AS team_name_away,
+            wl_away,
+            CAST(pts_away AS INT64)                         AS pts_away,
+            CAST(home_win AS INT64)                         AS home_win,
+            CAST(is_bubble_season AS BOOL)                  AS is_bubble_season,
+            CAST(attendance AS INT64)                       AS attendance
+        FROM {{ '{{' }} source('nba_raw', 'games') {{ '}}' }}
+        WHERE game_date IS NOT NULL
+          AND wl_home   IS NOT NULL
+          AND team_abbreviation_home IS NOT NULL
+      models/staging/schema.yml: |
+        version: 2
+        models:
+          - name: stg_games
+            description: Cleaned and typed NBA game results. One row per game.
+            columns:
+              - name: game_id
+                data_tests:
+                  - not_null
+                  - unique
+              - name: game_date
+                data_tests:
+                  - not_null
+              - name: season_year
+                data_tests:
+                  - not_null
+              - name: team_abbr_home
+                data_tests:
+                  - not_null
+              - name: wl_home
+                data_tests:
+                  - not_null
+                  - accepted_values:
+                      values: ["W", "L"]
+              - name: home_win
+                data_tests:
+                  - not_null
+              - name: is_bubble_season
+                data_tests:
+                  - not_null
+      models/marts/mart_home_court_advantage.sql: |
+        {{ '{{' }} config(
+            materialized='table',
+            partition_by={"field": "season_year", "data_type": "int64", "range": {"start": 1946, "end": 2030, "interval": 1}},
+            cluster_by=["team_abbr"]
+        ) {{ '}}' }}
+        WITH home_stats AS (
+            SELECT
+                season_year, team_abbr_home AS team_abbr, team_name_home AS team_name, is_bubble_season,
+                COUNT(*) AS home_games, SUM(home_win) AS home_wins,
+                SAFE_DIVIDE(SUM(home_win), COUNT(*)) AS home_win_pct,
+                AVG(attendance) AS avg_attendance
+            FROM {{ '{{' }} ref('stg_games') {{ '}}' }}
+            GROUP BY season_year, team_abbr_home, team_name_home, is_bubble_season
+        ),
+        away_stats AS (
+            SELECT
+                season_year, team_abbr_away AS team_abbr,
+                COUNT(*) AS away_games,
+                SUM(CASE WHEN wl_away = 'W' THEN 1 ELSE 0 END) AS away_wins,
+                SAFE_DIVIDE(SUM(CASE WHEN wl_away = 'W' THEN 1 ELSE 0 END), COUNT(*)) AS away_win_pct
+            FROM {{ '{{' }} ref('stg_games') {{ '}}' }}
+            GROUP BY season_year, team_abbr_away
+        ),
+        league_avg AS (
+            SELECT season_year,
+                SAFE_DIVIDE(SUM(home_wins), SUM(home_games)) AS league_home_win_pct,
+                AVG(avg_attendance) AS league_avg_attendance
+            FROM home_stats GROUP BY season_year
+        )
+        SELECT
+            h.season_year, h.team_abbr, h.team_name, h.is_bubble_season,
+            h.home_games, h.home_wins, ROUND(h.home_win_pct, 4) AS home_win_pct,
+            a.away_games, a.away_wins, ROUND(a.away_win_pct, 4) AS away_win_pct,
+            ROUND(h.home_win_pct - a.away_win_pct, 4) AS home_advantage_delta,
+            ROUND(l.league_home_win_pct, 4) AS league_home_win_pct,
+            CAST(ROUND(h.avg_attendance) AS INT64) AS avg_attendance,
+            CAST(ROUND(l.league_avg_attendance) AS INT64) AS league_avg_attendance
+        FROM home_stats h
+        JOIN away_stats a USING (season_year, team_abbr)
+        JOIN league_avg  l USING (season_year)
+      models/marts/schema.yml: |
+        version: 2
+        models:
+          - name: mart_home_court_advantage
+            description: Home court advantage metrics by team and season.
+            columns:
+              - name: season_year
+                data_tests: [not_null]
+              - name: team_abbr
+                data_tests: [not_null]
+              - name: team_name
+                data_tests: [not_null]
+              - name: is_bubble_season
+                data_tests: [not_null]
+              - name: home_win_pct
+                data_tests: [not_null]
+              - name: away_win_pct
+                data_tests: [not_null]
+              - name: home_advantage_delta
+                data_tests: [not_null]
+              - name: league_home_win_pct
+                data_tests: [not_null]

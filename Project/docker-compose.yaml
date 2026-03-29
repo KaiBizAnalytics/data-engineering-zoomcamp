@@ -1,0 +1,36 @@
+services:
+
+  # ── Ingestion: Kaggle → GCS ────────────────────────────────────────────────
+  ingest:
+    build: ./ingestion
+    environment:
+      GCS_BUCKET: ${GCS_BUCKET:-sanguine-mark-366002-nba-lake}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME}
+      KAGGLE_KEY: ${KAGGLE_KEY}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-creds.json
+    volumes:
+      - ${GCP_CREDS_PATH:-./gcp-creds.json}:/secrets/gcp-creds.json:ro
+    profiles: [ingest]
+
+  # ── Spark Transform: GCS raw/ → GCS processed/ ────────────────────────────
+  spark:
+    build: ./spark
+    environment:
+      GCS_BUCKET: ${GCS_BUCKET:-sanguine-mark-366002-nba-lake}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-creds.json
+    volumes:
+      - ${GCP_CREDS_PATH:-./gcp-creds.json}:/secrets/gcp-creds.json:ro
+    profiles: [spark]
+
+  # ── Streamlit Dashboard ────────────────────────────────────────────────────
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      GCP_PROJECT: ${GCP_PROJECT:-sanguine-mark-366002}
+      BQ_DATASET: ${BQ_DATASET:-nba_dbt}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-creds.json
+    volumes:
+      - ${GCP_CREDS_PATH:-./gcp-creds.json}:/secrets/gcp-creds.json:ro
+    profiles: [dashboard]

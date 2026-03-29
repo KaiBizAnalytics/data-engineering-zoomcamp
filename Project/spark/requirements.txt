@@ -1,0 +1,2 @@
+pyspark==3.5.3
+google-cloud-storage==2.18.2

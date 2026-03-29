@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: stg_games
+    description: >
+      Cleaned and typed NBA game results. One row per game.
+      Filters out rows missing game_date, wl_home, or team abbreviation.
+    columns:
+      - name: game_id
+        description: Unique game identifier
+        tests:
+          - not_null
+          - unique
+      - name: game_date
+        description: Date the game was played
+        tests:
+          - not_null
+      - name: season_year
+        description: Season start year (e.g. 2019 for the 2019-20 season)
+        tests:
+          - not_null
+      - name: team_abbr_home
+        description: 3-letter home team abbreviation (uppercase)
+        tests:
+          - not_null
+      - name: wl_home
+        description: Home team result
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["W", "L"]
+      - name: home_win
+        description: 1 if home team won, 0 otherwise
+        tests:
+          - not_null
+      - name: is_bubble_season
+        description: True for the 2019-20 COVID bubble season
+        tests:
+          - not_null
