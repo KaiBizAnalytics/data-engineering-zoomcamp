@@ -119,6 +119,8 @@ The pipeline has **4 steps orchestrated end-to-end by Kestra**:
 
 Kestra runs locally via Docker Compose (`kestra/docker-compose.yaml`). The flow definition is at `kestra/flows/nba_pipeline.yaml`. Each step runs in its own Docker container so there are no dependency conflicts between the Python ingestion, Spark, and dbt environments.
 
+The pipeline is scheduled to run **every Monday at 06:00 UTC** — pulling the latest data from Kaggle, re-processing with Spark, reloading BigQuery, and rebuilding the dbt models. This makes it a proper weekly batch pipeline that stays current as the Kaggle dataset is updated with new game results.
+
 ---
 
 ## Data Warehouse

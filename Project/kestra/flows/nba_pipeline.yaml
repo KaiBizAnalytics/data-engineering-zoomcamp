@@ -13,6 +13,11 @@ variables:
   bq_raw_dataset: nba_raw
   bq_dbt_dataset: nba_dbt_marts
 
+triggers:
+  - id: weekly_refresh
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 * * 1"  # Every Monday at 06:00 UTC
+
 tasks:
 
   # ── Step 1: Ingest from Kaggle → GCS ───────────────────────────────────────

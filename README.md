@@ -56,6 +56,28 @@ Completed homework assignments are in the [Homework/](Homework/) directory, orga
 
 ---
 
+## Capstone Project — NBA Home Court Advantage
+
+**[→ Project/](Project/)**
+
+An end-to-end data engineering pipeline applying all 7 modules to a single question:
+
+> *Does home court advantage still matter in the NBA — and did the 2019-20 COVID bubble season (zero fans) prove that crowds are the real driver?*
+
+Built on 70+ years of NBA game data from Kaggle (~65,000 games). The full pipeline runs weekly on a Kestra schedule, pulling the latest data through Spark, loading to BigQuery, rebuilding dbt models, and surfacing results in an interactive Streamlit dashboard.
+
+| Layer | Tool |
+|---|---|
+| IaC | Terraform → GCS bucket + BigQuery datasets |
+| Ingestion | Python (Kaggle API) → GCS raw/ |
+| Batch Processing | PySpark → GCS processed/ |
+| Orchestration | Kestra (weekly schedule, Docker) |
+| Data Warehouse | BigQuery (partitioned + clustered) |
+| Transformations | dbt-bigquery (staging view + mart table) |
+| Dashboard | Streamlit + Plotly (4 tiles) |
+
+---
+
 ## Course
 
 - **Course repo:** [DataTalksClub/data-engineering-zoomcamp](https://github.com/DataTalksClub/data-engineering-zoomcamp)
