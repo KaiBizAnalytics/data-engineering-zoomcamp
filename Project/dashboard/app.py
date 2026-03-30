@@ -28,14 +28,38 @@ BUBBLE_YEAR = 2019
 
 
 def _get_bq_client() -> bigquery.Client:
-    # Streamlit Cloud: credentials passed as JSON string in secrets
+    # Option 1: Streamlit Cloud — credentials as a TOML table [gcp_service_account]
+    # (Recommended: avoids JSON parsing issues with private key newlines)
+    if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
+        creds = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"]
+        )
+        return bigquery.Client(project=GCP_PROJECT, credentials=creds)
+
+    # Option 2: environment variable or Streamlit secret as JSON string
     creds_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON") or \
-                 st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", None)
+                 (st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", None)
+                  if hasattr(st, "secrets") else None)
     if creds_json:
-        info = json.loads(creds_json) if isinstance(creds_json, str) else creds_json
+        if not isinstance(creds_json, str):
+            info = dict(creds_json)
+        else:
+            try:
+                info = json.loads(creds_json)
+            except json.JSONDecodeError:
+                # Streamlit may have unescaped \n in the private key — re-escape it
+                import re
+                fixed = re.sub(
+                    r'("private_key"\s*:\s*")(.*?)(?="(?:\s*,|\s*\}))',
+                    lambda m: m.group(1) + m.group(2).replace('\n', '\\n'),
+                    creds_json,
+                    flags=re.DOTALL,
+                )
+                info = json.loads(fixed)
         creds = service_account.Credentials.from_service_account_info(info)
         return bigquery.Client(project=GCP_PROJECT, credentials=creds)
-    # Local: use GOOGLE_APPLICATION_CREDENTIALS file path
+
+    # Option 3: local — use GOOGLE_APPLICATION_CREDENTIALS file path
     return bigquery.Client(project=GCP_PROJECT)
 
 
