@@ -1,5 +1,7 @@
 # NBA Home Court Advantage — Does It Still Matter?
 
+**Live dashboard: [nba-homecourt-advantage-kai-li.streamlit.app](https://nba-homecourt-advantage-kai-li.streamlit.app/)**
+
 An end-to-end data engineering project analyzing 70+ years of NBA game results to measure home court advantage — and whether the 2019-20 COVID bubble season (zero fans) changed it.
 
 ---
