@@ -12,11 +12,14 @@ Four tiles:
 """
 
 import os
+import json
+import tempfile
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from google.cloud import bigquery
+from google.oauth2 import service_account
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sanguine-mark-366002")
 BQ_DATASET  = os.environ.get("BQ_DATASET",  "nba_dbt_marts")
@@ -24,9 +27,21 @@ MART_TABLE  = f"{GCP_PROJECT}.{BQ_DATASET}.mart_home_court_advantage"
 BUBBLE_YEAR = 2019
 
 
+def _get_bq_client() -> bigquery.Client:
+    # Streamlit Cloud: credentials passed as JSON string in secrets
+    creds_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON") or \
+                 st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", None)
+    if creds_json:
+        info = json.loads(creds_json) if isinstance(creds_json, str) else creds_json
+        creds = service_account.Credentials.from_service_account_info(info)
+        return bigquery.Client(project=GCP_PROJECT, credentials=creds)
+    # Local: use GOOGLE_APPLICATION_CREDENTIALS file path
+    return bigquery.Client(project=GCP_PROJECT)
+
+
 @st.cache_data(ttl=3600)
 def load_data() -> pd.DataFrame:
-    client = bigquery.Client(project=GCP_PROJECT)
+    client = _get_bq_client()
     query  = f"SELECT * FROM `{MART_TABLE}` ORDER BY season_year, team_abbr"
     return client.query(query).to_dataframe()
 
