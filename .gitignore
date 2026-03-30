@@ -31,6 +31,7 @@ spark/yellow_2025_11_repartitioned/
 spark/zones/
 
 # dbt artifacts (generated, not source)
+taxi_rides_ny/
 taxi_rides_ny/data/
 taxi_rides_ny/target/
 taxi_rides_ny/dbt_packages/
